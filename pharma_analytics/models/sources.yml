@@ -1,0 +1,16 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    description: Raw data from figshare
+    tables:
+      - name: laboratory
+        description: Laboratory batch and quality data (1005 batches, 55 columns)
+        columns:
+          - name: batch
+            description: Batch identifier
+          - name: code
+            description: Product code
+          - name: strength
+            description: Product strength
