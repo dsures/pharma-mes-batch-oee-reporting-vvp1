@@ -1,0 +1,13 @@
+version: 2
+
+models:
+  - name: stg_laboratory
+    columns:
+      - name: batch_id
+        tests:
+          - unique
+          - not_null
+
+      - name: batch_yield
+        tests:
+          - not_null

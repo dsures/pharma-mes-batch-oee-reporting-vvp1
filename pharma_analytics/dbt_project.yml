@@ -1,0 +1,27 @@
+name: 'pharma_analytics'
+version: '1.0.0'
+config-version: 2
+
+profile: 'pharma_analytics'
+
+model-paths: ["models"]
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  pharma_analytics:
+    staging:
+      materialized: table
+      schema: staging
+    marts:
+      materialized: table
+      schema: marts
+
+vars:
+  analytics_schema: 'marts'
+
+tests:
+  pharma_analytics:
+    schema: marts_tests
