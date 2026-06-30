@@ -6,6 +6,7 @@ Pulls Laboratory.csv, cleans it, and loads into raw schema.
 import os
 import pandas as pd
 import pyodbc
+import zipfile
 from dotenv import load_dotenv
 import logging
 
@@ -16,6 +17,10 @@ logger = logging.getLogger(__name__)
 # Load environment variables from .env file
 load_dotenv()
 
+# Kaggle dataset info
+KAGGLE_DATASET = os.getenv('KAGGLE_DATASET')
+DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
+
 # Azure SQL connection details from .env
 AZURE_SQL_SERVER = os.getenv('AZURE_SQL_SERVER')
 AZURE_SQL_DB = os.getenv('AZURE_SQL_DB')
@@ -24,7 +29,7 @@ AZURE_SQL_PASSWORD = os.getenv('AZURE_SQL_PASSWORD')
 
 # Figshare URLs (public, no auth required)
 FIGSHARE_LABORATORY_URL = os.getenv('FIGSHARE_LABORATORY_URL')
-
+FIGSHARE_PROCESS_URL = os.getenv('FIGSHARE_PROCESS_URL')
 # Connection string
 CONNECTION_STRING = (
     f'Driver={{ODBC Driver 18 for SQL Server}};'
@@ -58,26 +63,48 @@ def create_raw_schema():
         logger.error(f"Error creating schema: {e}")
         raise
 
+def download_kaggle_dataset():
+    """Download dataset from Kaggle if not already present."""
+    try:
+        if not os.path.exists(DATA_DIR):
+            os.makedirs(DATA_DIR)
+        
+        csv_path = os.path.join(DATA_DIR, 'Laboratory.csv')
+        
+        if not os.path.exists(csv_path):
+            logger.info(f"Downloading dataset from Kaggle: {KAGGLE_DATASET}")
+            os.system(f"kaggle datasets download -d {KAGGLE_DATASET} -p {DATA_DIR} --unzip")
+            logger.info("Dataset downloaded and extracted")
+        else:
+            logger.info("Dataset already exists locally")
+    except Exception as e:
+        logger.error(f"Error downloading Kaggle dataset: {e}")
+        raise
+
 def load_laboratory_csv():
     """
     Load Laboratory.csv from figshare into Azure SQL raw.laboratory table.
     Handles:
     - Semicolon delimiter
     - Missing values
-    - Data type inference
+    - Sample size limit for demo
     """
     try:
         logger.info("Fetching Laboratory.csv from figshare...")
 
         # Read CSV with semicolon delimiter
-        csv_file = r'C:\Users\Darvin\Documents\Freelancing business\VVP\Vimachem\pharma-mes-batch-oee-reporting-vvp1\data\Laboratory.csv'
-        df = pd.read_csv(csv_file, sep=';', low_memory=False, encoding='utf-8')
+        csv_path = os.path.join(DATA_DIR, 'Laboratory.csv')
+        df = pd.read_csv(csv_path, sep=';', low_memory=False, encoding='utf-8')
 
-        logger.info(f"Loaded {len(df)} rows, {len(df.columns)} columns")
+        # Limit to sample size (for demo/free tier)
+        sample_size = int(os.getenv('SAMPLE_SIZE', 250))
+        df = df.head(sample_size)
+
+        logger.info(f"Loaded {len(df)} rows, {len(df.columns)} columns (limited to SAMPLE_SIZE={sample_size})")
         logger.info(f"Columns: {df.columns.tolist()}")
 
         # Basic data cleaning
-        df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_')  # Normalize column names
+        df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_')
 
         # Handle missing values (log counts)
         missing_summary = df.isnull().sum()
@@ -96,7 +123,7 @@ def load_laboratory_csv():
         cursor.execute("IF OBJECT_ID('raw.laboratory', 'U') IS NOT NULL DROP TABLE raw.laboratory")
         conn.commit()
 
-        # Create table — all columns as NVARCHAR(MAX) to avoid type conversion issues
+        # Create table — all columns as NVARCHAR(MAX)
         logger.info("Creating raw.laboratory table...")
         col_defs = [f"[{col}] NVARCHAR(MAX)" for col in df.columns]
 
@@ -110,10 +137,9 @@ def load_laboratory_csv():
         for idx, row in df.iterrows():
             placeholders = ', '.join(['?' for _ in range(len(row))])
             insert_sql = f"INSERT INTO raw.laboratory VALUES ({placeholders})"
-            # Convert NaN to None for proper NULL handling
             row_values = tuple(None if pd.isna(v) else v for v in row)
             cursor.execute(insert_sql, row_values)
-            if (idx + 1) % 100 == 0:
+            if (idx + 1) % 50 == 0:
                 logger.info(f"Inserted {idx + 1} rows...")
 
         conn.commit()
@@ -128,13 +154,16 @@ def load_laboratory_csv():
 def main():
     """Main ETL flow."""
     logger.info("Starting data load pipeline...")
-
+    
+    # Download dataset from Kaggle
+    download_kaggle_dataset()
+    
     # Step 1: Create schema
     create_raw_schema()
-
+    
     # Step 2: Load Laboratory data
     load_laboratory_csv()
-
+    
     logger.info("Data load complete!")
 
 if __name__ == '__main__':
