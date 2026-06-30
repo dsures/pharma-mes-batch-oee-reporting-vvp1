@@ -6,10 +6,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install ODBC Driver 18
       run: |
         sudo apt-get update
@@ -18,18 +18,30 @@ jobs:
         curl https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
         sudo apt-get update
         sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18
-    
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r ingestion/requirements.txt
         pip install dbt-sqlserver
-    
+
+    - name: Download dataset from Kaggle
+      env:
+        KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+        KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+      run: |
+        mkdir -p ~/.kaggle
+        echo '{"username":"'$KAGGLE_USERNAME'","key":"'$KAGGLE_KEY'"}' > ~/.kaggle/kaggle.json
+        chmod 600 ~/.kaggle/kaggle.json
+        cd $GITHUB_WORKSPACE
+        mkdir -p data
+        kaggle datasets download -d darvinsures/pharma-batch-quality-and-process-data -p data --unzip
+
     - name: Load data to Azure SQL
       env:
         AZURE_SQL_SERVER: ${{ secrets.AZURE_SQL_SERVER }}
@@ -38,7 +50,7 @@ jobs:
         AZURE_SQL_PASSWORD: ${{ secrets.AZURE_SQL_PASSWORD }}
       run: |
         python ingestion/load_to_azure_sql.py
-    
+
     - name: Run dbt
       env:
         AZURE_SQL_SERVER: ${{ secrets.AZURE_SQL_SERVER }}
@@ -50,11 +62,11 @@ jobs:
         dbt deps
         dbt run
         dbt test
-    
+
     - name: Notify on success
       if: success()
       run: echo "Pipeline completed successfully!"
-    
+
     - name: Notify on failure
       if: failure()
       run: echo "Pipeline failed! Check logs."
