@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: dim_equipment
+    columns:
+      - name: equipment_key
+        tests:
+          - unique
+          - not_null
+
+      - name: equipment_code
+        tests:
+          - unique
+          - not_null

@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: fct_downtime_analysis
+    columns:
+      - name: downtime_id
+        tests:
+          - unique
+          - not_null
+
+      - name: equipment_code
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_equipment')
+              field: equipment_code
+
+      - name: duration_minutes
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 10
+              max_value: 1440
