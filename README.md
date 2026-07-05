@@ -65,12 +65,8 @@ Metabase Dashboards
 | Change | Before | After | Technique |
 |---|---|---|---|
 | `stg_process_timeseries` JSON parsing | 468.56s | _[fill in after rerun]_ | 17× `JSON_VALUE()` per row → single `OPENJSON ... WITH` parse |
-| Downstream window functions (`fct_downtime_analysis`) | _[time before index]_ | _[time after index]_ | Added index on `stg_process_timeseries(equipment_code, event_ts)` |
 | Ad-hoc aggregation vs. pre-built mart | _[time against raw 4.7M rows]_ | _[time against fct_oee_by_batch, ~1,900 rows]_ | Pre-aggregated mart layer — Metabase never queries raw readings directly |
 
-_(Fill in the bracketed values from your own `dbt run` timings and DBeaver query execution times — see the query-tuning conversation notes for the exact commands to reproduce each measurement.)_
-
----
 
 ---
 
@@ -151,16 +147,11 @@ Open `http://localhost:3000`, complete first-run setup, then add Azure SQL as a 
 ## Dashboards
 
 ### Equipment OEE & Availability
-_(screenshot placeholder — see below)_
+<img width="1260" height="766" alt="image" src="https://github.com/user-attachments/assets/41284614-9569-4938-87f8-0d63cbf75973" />
+
 
 ### Downtime Impact on Quality
-_(screenshot placeholder — see below)_
-
-**Screenshots:** save your dashboard screenshots into `docs/screenshots/` (create the folder if it doesn't exist), e.g. `docs/screenshots/dashboard1_oee_availability.png` and `docs/screenshots/dashboard2_downtime_quality.png`, then replace the two placeholder lines above with:
-```markdown
-![Equipment OEE & Availability](docs/screenshots/dashboard1_oee_availability.png)
-```
-and the equivalent for dashboard 2. These are the images you'd also drop into the cover note/deck sent to the hiring contact.
+<img width="1358" height="532" alt="image" src="https://github.com/user-attachments/assets/2eae153a-6aca-4612-a195-c2936ee15c69" />
 
 ---
 
