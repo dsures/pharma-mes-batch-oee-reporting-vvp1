@@ -56,6 +56,7 @@ Metabase Dashboards
 
 **Downtime** is capped to 10 minutes–24 hours per event. Gaps longer than 24 hours are between-campaign idle time, not equipment failure, and are excluded. **There is no downtime-reason classification anywhere in the source data** — every process file was checked, none has a reason/category column. Dashboard 2's downtime breakdown is by equipment and duration, not by cause.
 
+```
 ---
 
 ## Query tuning
