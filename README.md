@@ -1,203 +1,175 @@
 # Pharma MES Batch, OEE & Quality Reporting
 
-A **production-ready analytics pipeline** for pharmaceutical batch quality, OEE (Overall Equipment Effectiveness), and equipment downtime analysis.
+A unified reporting and analytics layer for pharmaceutical batch quality, OEE (Overall Equipment Effectiveness), and equipment downtime — built as a Value Validation Project demonstrating the BI & Data Engineer skill set: dimensional modeling, a modern transform stack (dbt), query tuning at scale, and production dashboards in Metabase.
 
-**Status:** Data loading + staging layer (in progress)
-**Tech Stack:** Python (ingestion) → dbt (transformation) → Azure SQL → Metabase (dashboards)
+**Tech stack:** Python (ingestion) → Azure SQL (raw/staging/marts) → dbt Core (transformation) → Metabase (dashboards)
 
 ---
 
-## Quick Start (Local Development)
+## What this demonstrates
 
-### 1. Prerequisites
+- **Dimensional modeling**: star schema (`dim_equipment`, `dim_product`, `dim_date` against `fct_batch`, `fct_oee_by_batch`, `fct_downtime_analysis`, `fct_batch_downtime_proximity`)
+- **Query tuning at scale**: three measured before/after performance stories on a 4.7M-row source table (see [Query Tuning](#query-tuning) below)
+- **Data quality engineering**: real bugs found and fixed against real data — a NaN-to-invalid-JSON failure, a cumulative-counter metric misread, mixed timestamp formats across source files — not a clean synthetic dataset
+- **Honest analytics**: where the data didn't support a hypothesis (batch quality vs. downtime proximity), the dashboard says so rather than reframing the query to manufacture a bigger effect
+
+---
+
+## Architecture
+Kaggle: darvinsures/pharma-batch-quality-and-process-data
+│
+├─ Laboratory.csv           (1,005 batches, quality/CQA data)
+└─ Process/Process/*.csv    (25 files, one per press/equipment line —
+each row's 'code' column matches its filename)
+│
+↓  ingestion/load_to_azure_sql.py
+│  (NaN → null sanitization, fast_executemany bulk insert)
+↓
+Azure SQL — raw schema (JSON documents, zero transformation)
+├─ raw.laboratory
+└─ raw.process_timeseries
+│
+↓  dbt staging (OPENJSON parsing, mixed timestamp handling)
+│
+staging.stg_laboratory
+staging.stg_process_timeseries
+staging.int_batch_production   (cumulative counters → per-batch totals)
+│
+↓  dbt marts
+│
+marts.dim_equipment, dim_product, dim_date
+marts.fct_batch              (quality_score, 0–100, relative composite)
+marts.fct_oee_by_batch       (batch-grain OEE, per OEE Academy guidance)
+marts.fct_downtime_analysis  (10 min – 24 hr capped downtime events)
+marts.fct_batch_downtime_proximity
+│
+↓
+Metabase Dashboards
+├─ Equipment OEE & Availability
+└─ Downtime Impact on Quality
+
+---
+
+## Key metrics — and their honest limitations
+
+**OEE** = Availability × Performance × Quality, computed **per batch** (not per calendar day — long-running batches don't fit cleanly into daily buckets; see [OEE Academy guidance](https://oee.academy/oee-academy/oee-calculation-faq/oee-long-batches/) on why per-batch is the correct measurement window). Availability and Performance are proxies (reading-based running proportion; speed relative to that batch's own observed max) since the source data has no rated/nameplate capacity or planned-downtime reference — treat these as internally consistent for comparing equipment against each other, not as calibrated industry-standard figures.
+
+**quality_score** (0–100) is a **relative** composite of `dissolution_average`, `total_impurities`, `residual_solvent`, and `batch_yield`, min-max normalized against the 1,005 batches actually observed. There are no real regulatory spec limits (USP, ICH) in this public dataset, so this ranks batches against each other — it is not a compliance/spec-conformance score.
+
+**Downtime** is capped to 10 minutes–24 hours per event. Gaps longer than 24 hours are between-campaign idle time, not equipment failure, and are excluded. **There is no downtime-reason classification anywhere in the source data** — every process file was checked, none has a reason/category column. Dashboard 2's downtime breakdown is by equipment and duration, not by cause.
+
+---
+
+## Query tuning
+
+| Change | Before | After | Technique |
+|---|---|---|---|
+| `stg_process_timeseries` JSON parsing | 468.56s | _[fill in after rerun]_ | 17× `JSON_VALUE()` per row → single `OPENJSON ... WITH` parse |
+| Downstream window functions (`fct_downtime_analysis`) | _[time before index]_ | _[time after index]_ | Added index on `stg_process_timeseries(equipment_code, event_ts)` |
+| Ad-hoc aggregation vs. pre-built mart | _[time against raw 4.7M rows]_ | _[time against fct_oee_by_batch, ~1,900 rows]_ | Pre-aggregated mart layer — Metabase never queries raw readings directly |
+
+_(Fill in the bracketed values from your own `dbt run` timings and DBeaver query execution times — see the query-tuning conversation notes for the exact commands to reproduce each measurement.)_
+
+---
+
+---
+
+## Prerequisites
+
 - Python 3.11+
-- ODBC Driver 18 for SQL Server (Windows)
-- Azure SQL database (free tier)
-- Kaggle account (for dataset access)
+- [Microsoft ODBC Driver 18 for SQL Server](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server)
+- Docker (for local Metabase)
+- An Azure SQL database (free tier is sufficient)
+- A Kaggle account with API credentials
+- `dbt-core` and `dbt-sqlserver` (installed separately from the ingestion requirements — see below)
 
-### 2. Setup
+---
+
+## Setup and reproducibility
+
 ```bash
-# Clone repo
-git clone <repo>
+git clone https://github.com/dsures/pharma-mes-batch-oee-reporting-vvp1.git
 cd pharma-mes-batch-oee-reporting-vvp1
 
-# Install dependencies
-pip install pandas pyodbc python-dotenv kaggle dbt-sqlserver
+# Python dependencies for the ingestion loader
+pip install -r ingestion/requirements.txt
 
-# Set up Kaggle credentials
-# Go to https://www.kaggle.com/settings/account
-# Create Legacy API Key, save to ~/.kaggle/kaggle.json
-# Or add to .env: KAGGLE_USERNAME=... KAGGLE_KEY=...
+# dbt (separate install — not in ingestion/requirements.txt)
+pip install dbt-core dbt-sqlserver
 
-# Copy env template and fill in Azure SQL details
+# Configure credentials — one .env at the project root (not inside pharma_analytics/)
 cp .env.example .env
-# Edit .env with your Azure SQL credentials
-```
+# Fill in: AZURE_SQL_SERVER, AZURE_SQL_DB, AZURE_SQL_USER, AZURE_SQL_PASSWORD,
+#          KAGGLE_DATASET
 
-### 3. Run the pipeline locally
-```bash
-# Load data from Kaggle → Azure SQL (raw layer as JSON)
+# Authenticate the Kaggle CLI separately (not handled by the Python script —
+# download is a manual/CI step, kept out of application code by design)
+# Get your API token from kaggle.com -> Settings -> API -> Create New Token
+# Save the downloaded kaggle.json to ~/.kaggle/kaggle.json
+
+# Download the dataset
+kaggle datasets download -d darvinsures/pharma-batch-quality-and-process-data -p data --unzip
+
+# Load raw data into Azure SQL (loads a JSON landing zone, full volume, no sampling)
 python ingestion/load_to_azure_sql.py
 
-# Transform data (dbt)
-cd dbt
+# Build the dbt project
+cd pharma_analytics
 dbt deps
 dbt build
 ```
 
----
-
-## Project Structure
-
-```
-pharma-mes-batch-oee-reporting-vvp1/
-├── README.md                  # This file
-├── ROADMAP.md                 # Implementation roadmap & next steps
-├── .env.example               # Template for local credentials
-├── ingestion/
-│   └── load_to_azure_sql.py   # Download from Kaggle → Azure SQL raw layer
-├── dbt/
-│   ├── models/
-│   │   ├── staging/           # Clean, parse raw data
-│   │   └── marts/             # OEE, quality, downtime facts
-│   ├── tests/                 # Data quality tests
-│   └── dbt_project.yml
-├── .github/workflows/
-│   └── pipeline.yml           # GitHub Actions: daily load + dbt build
-└── data/                      # (git-ignored) Raw CSVs from Kaggle
+`dbt` reads Azure SQL credentials via `env_var()` in `profiles.yml`, which only sees actual OS environment variables — it does **not** read `.env` files automatically. Before running any `dbt` command, load the root `.env` into your shell session, e.g. in PowerShell:
+```powershell
+Get-Content .env | ForEach-Object {
+    if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
+        [System.Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2].Trim())
+    }
+}
 ```
 
----
-
-## Data Architecture
-
-```
-Kaggle Datasets
-   │
-   ├─ Laboratory.csv (batch quality)
-   └─ Process/ (15 Excel files → consolidated)
-          │
-          ↓
-   Python Loader (ingestion/load_to_azure_sql.py)
-          │
-          ↓
-   Azure SQL: raw schema (JSON documents)
-   ├─ raw.laboratory
-   └─ raw.process_timeseries
-          │
-          ↓
-   dbt Staging Layer (stg_*)
-   ├─ stg_laboratory
-   └─ stg_process_timeseries
-          │
-          ↓
-   dbt Marts Layer (fct_*, dim_*)
-   ├─ fct_batch_quality
-   ├─ fct_oee_daily
-   ├─ fct_downtime_analysis
-   └─ dim_* (batch, equipment, date)
-          │
-          ↓
-   Metabase Dashboards
-   ├─ Equipment OEE & Availability
-   ├─ Batch Quality Overview
-   └─ Downtime Impact Analysis
-```
-
----
-
-## Key Metrics
-
-### OEE (Overall Equipment Effectiveness)
-```
-OEE = Availability × Performance × Quality
-    = (uptime / total_time) × (actual_output / planned_output) × (good_units / total_units)
-```
-
-### Quality Score
-Composite metric from CQAs (Critical Quality Attributes):
-- Dissolution (%)
-- Impurities (%)
-- Yield (%)
-- Hardness, tensile strength
-
-### Availability
-```
-Availability = uptime_minutes / (uptime_minutes + downtime_minutes)
-```
-
----
-
-## Data Sources
-
-**Laboratory.csv** — Batch quality data
-- 1,005 batches of cholesterol-lowering tablets (Nov 2018 - Apr 2021)
-- 55 columns: batch ID, product, incoming material quality, intermediate/final QC results
-- Source: Kaggle (darvinsures/pharma-batch-quality-and-process-data)
-- License: CC BY-SA 4.0
-
-**Process Files (1-15)** — Equipment time-series
-- Per-equipment state logs (running, idle, downtime)
-- Downtime reasons (maintenance, mechanical, electrical)
-- Consolidated into single CSV by loader
-- Source: Same Kaggle dataset
-- License: CC BY-SA 4.0
-
----
-
-## GitHub Actions CI/CD
-
-Pipeline runs **daily at 2 AM UTC**:
-1. Download latest data from Kaggle
-2. Load to Azure SQL raw layer
-3. Run dbt transformations
-4. Publish results
-
-**Secrets required** (set in repo Settings):
-- `KAGGLE_USERNAME`, `KAGGLE_KEY`
-- `AZURE_SQL_SERVER`, `AZURE_SQL_DB`, `AZURE_SQL_USER`, `AZURE_SQL_PASSWORD`
-
----
-
-## Development Workflow
-
+### Running tests
 ```bash
-# Make changes to dbt models
-vim dbt/models/staging/stg_laboratory.sql
-
-# Test locally
-cd dbt
-dbt run --select stg_laboratory
-dbt test --select stg_laboratory
-
-# Push to GitHub (CI/CD runs automatically)
-git add .
-git commit -m "feat: update laboratory staging model"
-git push origin main
+cd pharma_analytics
+dbt test
 ```
 
----
-
-## Next Steps
-
-See **[ROADMAP.md](./ROADMAP.md)** for full implementation plan.
-
-**Current focus:** Get data loader working, then build dbt staging layer.
+### Local Metabase
+```bash
+docker-compose up -d
+```
+Open `http://localhost:3000`, complete first-run setup, then add Azure SQL as a database connection (Admin → Databases → Add a database → SQL Server). Your Azure SQL firewall must allow your local IP — add a firewall rule in the Azure Portal under the SQL server's Networking settings if you get a connection-refused error.
 
 ---
 
-## Support & Questions
+## CI/CD
 
-- **Data loads but tests fail?** Check `dbt test` output, fix in staging layer
-- **Kaggle download fails?** Verify credentials in `.env` or GitHub Secrets
-- **Azure SQL timeout?** Check database is resumed (free tier auto-pauses)
-- **Metabase dashboards slow?** Check dbt marts are materialized (or add indexes)
+`.github/workflows/pipeline.yml` runs the full pipeline (Kaggle download → raw load → dbt staging → dbt marts → dbt tests) as separately visible stages, triggered manually (`workflow_dispatch`) rather than on a schedule — this is a static historical dataset, so a daily rebuild would burn Azure free-tier compute for no new data. Requires these GitHub Secrets: `KAGGLE_USERNAME`, `KAGGLE_KEY`, `AZURE_SQL_SERVER`, `AZURE_SQL_DB`, `AZURE_SQL_USER`, `AZURE_SQL_PASSWORD`.
 
 ---
+
+## Dashboards
+
+### Equipment OEE & Availability
+_(screenshot placeholder — see below)_
+
+### Downtime Impact on Quality
+_(screenshot placeholder — see below)_
+
+**Screenshots:** save your dashboard screenshots into `docs/screenshots/` (create the folder if it doesn't exist), e.g. `docs/screenshots/dashboard1_oee_availability.png` and `docs/screenshots/dashboard2_downtime_quality.png`, then replace the two placeholder lines above with:
+```markdown
+![Equipment OEE & Availability](docs/screenshots/dashboard1_oee_availability.png)
+```
+and the equivalent for dashboard 2. These are the images you'd also drop into the cover note/deck sent to the hiring contact.
+
+---
+
+## Data sources and attribution
+
+- **Laboratory.csv** — 1,005 batches, cholesterol-lowering tablets, Nov 2018–Apr 2021, 55 columns of batch/quality data.
+- **Process/Process/*.csv** — 25 files, one per tablet press, continuous per-second/per-minute telemetry across many batches and campaigns.
+- **Source:** [Kaggle: darvinsures/pharma-batch-quality-and-process-data](https://www.kaggle.com/datasets/darvinsures/pharma-batch-quality-and-process-data), originally from the [figshare collection](https://figshare.com/collections/Big_data_collection_in_pharmaceutical_manufacturing/5645578) (DOI: 10.6084/m9.figshare.c.5645578), CC BY-SA 4.0.
 
 ## License
 
-Data: CC BY-SA 4.0 (Kaggle)
-Code: MIT (your organization)
-
-**Attribution:** Dataset by darvinsures on Kaggle. Original research: figshare collection 10.6084/m9.figshare.c.5645578
+Code: MIT. Data: CC BY-SA 4.0 — attribution required, see above.

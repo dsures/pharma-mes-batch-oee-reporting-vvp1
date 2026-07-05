@@ -1,0 +1,31 @@
+1. Query rewrite (JSON_VALUE → OPENJSON) — implemented, missing the "after" number.
+Before: 468.56s (already have this, from the actual dbt run log earlier). Get the after:
+dbt run --select stg_process_timeseries
+Grab the seconds from that log line — that's your paired before/after for story 1.
+2. Indexing — not implemented yet. Let's do it now and measure both sides.
+First, capture the current (unindexed) baseline by timing the heaviest downstream model — fct_downtime_analysis does LAG/SUM OVER (PARTITION BY equipment_code ORDER BY event_ts) across all 4.7M rows, which is exactly the kind of query an index helps most:
+dbt run --select fct_downtime_analysis
+Note the seconds. Then add the index to stg_process_timeseries.sql's config block:
+sql{{
+    config(
+        materialized='table',
+        schema='staging',
+        post_hook="CREATE CLUSTERED INDEX ix_stg_process_timeseries_equip_ts ON {{ this }} (equipment_code, event_ts)"
+    )
+}}
+Rebuild staging (to apply the index), then rebuild the downstream model again and compare:
+dbt run --select stg_process_timeseries fct_downtime_analysis
+Compare the second fct_downtime_analysis timing against the first — that's your before/after for story 2.
+3. Pre-aggregation / materialized marts — architecturally already in place, but never actually demoed against the "slow" alternative.
+This one's the most compelling if you show it live: time a query that computes OEE the "naive" way, aggregating from stg_process_timeseries directly (no pre-built mart):
+sqlSELECT
+    equipment_code,
+    AVG(CASE WHEN equipment_state = 'running' THEN 1.0 ELSE 0.0 END) AS availability_pct
+FROM staging.stg_process_timeseries
+GROUP BY equipment_code
+Time that in DBeaver (it shows execution time). Then time the equivalent already-materialized version:
+sqlSELECT equipment_code, AVG(availability_pct) AS availability_pct
+FROM marts.fct_oee_by_batch
+GROUP BY equipment_code
+The second should be dramatically faster since it's scanning ~1,900 pre-aggregated batch rows instead of 4.7 million raw readings — that's your before/after for story 3, and it's the clearest illustration of why the star-schema/mart layer exists at all.
+Run through all three and paste the timings — I'll help turn them into a clean before/after table for docs/query_tuning.md once we get to documentation.
