@@ -11,43 +11,41 @@ A unified reporting and analytics layer for pharmaceutical batch quality, OEE (O
 - **Dimensional modeling**: star schema (`dim_equipment`, `dim_product`, `dim_date` against `fct_batch`, `fct_oee_by_batch`, `fct_downtime_analysis`, `fct_batch_downtime_proximity`)
 - **Query tuning at scale**: three measured before/after performance stories on a 4.7M-row source table (see [Query Tuning](#query-tuning) below)
 - **Data quality engineering**: real bugs found and fixed against real data — a NaN-to-invalid-JSON failure, a cumulative-counter metric misread, mixed timestamp formats across source files — not a clean synthetic dataset
-- **Honest analytics**: where the data didn't support a hypothesis (batch quality vs. downtime proximity), the dashboard says so rather than reframing the query to manufacture a bigger effect
-
----
 
 ## Architecture
-Kaggle: darvinsures/pharma-batch-quality-and-process-data
-│
-├─ Laboratory.csv           (1,005 batches, quality/CQA data)
-└─ Process/Process/*.csv    (25 files, one per press/equipment line —
-each row's 'code' column matches its filename)
-│
-↓  ingestion/load_to_azure_sql.py
-│  (NaN → null sanitization, fast_executemany bulk insert)
-↓
-Azure SQL — raw schema (JSON documents, zero transformation)
-├─ raw.laboratory
-└─ raw.process_timeseries
-│
-↓  dbt staging (OPENJSON parsing, mixed timestamp handling)
-│
-staging.stg_laboratory
-staging.stg_process_timeseries
-staging.int_batch_production   (cumulative counters → per-batch totals)
-│
-↓  dbt marts
-│
-marts.dim_equipment, dim_product, dim_date
-marts.fct_batch              (quality_score, 0–100, relative composite)
-marts.fct_oee_by_batch       (batch-grain OEE, per OEE Academy guidance)
-marts.fct_downtime_analysis  (10 min – 24 hr capped downtime events)
-marts.fct_batch_downtime_proximity
-│
-↓
-Metabase Dashboards
-├─ Equipment OEE & Availability
-└─ Downtime Impact on Quality
 
+```
+Kaggle: darvinsures/pharma-batch-quality-and-process-data
+   │
+   ├─ Laboratory.csv           (1,005 batches, quality/CQA data)
+   └─ Process/Process/*.csv    (25 files, one per press/equipment line —
+                                 each row's 'code' column matches its filename)
+          │
+          ↓  ingestion/load_to_azure_sql.py
+          │  (NaN → null sanitization, fast_executemany bulk insert)
+          ↓
+Azure SQL — raw schema (JSON documents, zero transformation)
+   ├─ raw.laboratory
+   └─ raw.process_timeseries
+          │
+          ↓  dbt staging (OPENJSON parsing, mixed timestamp handling)
+          │
+   staging.stg_laboratory
+   staging.stg_process_timeseries
+   staging.int_batch_production   (cumulative counters → per-batch totals)
+          │
+          ↓  dbt marts
+          │
+   marts.dim_equipment, dim_product, dim_date
+   marts.fct_batch              (quality_score, 0–100, relative composite)
+   marts.fct_oee_by_batch       (batch-grain OEE, per OEE Academy guidance)
+   marts.fct_downtime_analysis  (10 min – 24 hr capped downtime events)
+   marts.fct_batch_downtime_proximity
+          │
+          ↓
+Metabase Dashboards
+   ├─ Equipment OEE & Availability
+   └─ Downtime Impact on Quality
 ---
 
 ## Key metrics — and their honest limitations
