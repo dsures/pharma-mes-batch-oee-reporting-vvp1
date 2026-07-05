@@ -57,17 +57,17 @@ Metabase Dashboards
 **Downtime** is capped to 10 minutes–24 hours per event. Gaps longer than 24 hours are between-campaign idle time, not equipment failure, and are excluded. **There is no downtime-reason classification anywhere in the source data** — every process file was checked, none has a reason/category column. Dashboard 2's downtime breakdown is by equipment and duration, not by cause.
 
 ```
----
+```
 
 ## Query tuning
 
 | Change | Before | After | Technique |
 |---|---|---|---|
-| `stg_process_timeseries` JSON parsing | 468.56s | _[fill in after rerun]_ | 17× `JSON_VALUE()` per row → single `OPENJSON ... WITH` parse |
-| Ad-hoc aggregation vs. pre-built mart | _[time against raw 4.7M rows]_ | _[time against fct_oee_by_batch, ~1,900 rows]_ | Pre-aggregated mart layer — Metabase never queries raw readings directly |
+| `stg_process_timeseries` JSON parsing | 468.56s | 178.15s | 17× `JSON_VALUE()` per row → single `OPENJSON ... WITH` parse |
+| Ad-hoc aggregation vs. pre-built mart | 1.714s | 1.03 | view vs table choice |
 
 
----
+```
 
 ## Prerequisites
 
