@@ -14,3 +14,10 @@ sources:
             description: Product code
           - name: strength
             description: Product strength
+      - name: process_timeseries
+        description: Consolidated per-equipment process time-series (25 press lines)
+        columns:
+          - name: raw_data
+            description: JSON document — see stg_process_timeseries.sql for parsed fields
+          - name: loaded_at
+            description: Row insert timestamp

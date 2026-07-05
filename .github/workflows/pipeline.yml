@@ -1,72 +1,86 @@
-name: Pharma Analytics Pipeline
+name: Data Pipeline
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # Manual trigger only — static demo dataset, no need for a daily schedule
 
 jobs:
-  build:
+  pipeline:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
-    - name: Install ODBC Driver 18
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y odbc-postgresql unixodbc-dev
-        curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
-        curl https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
-        sudo apt-get update
-        sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+      - name: Install Microsoft ODBC Driver 18 for SQL Server
+        run: |
+          curl https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc
+          curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get update
+          ACCEPT_EULA=Y sudo apt-get install -y msodbcsql18 unixodbc-dev
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r ingestion/requirements.txt
-        pip install dbt-sqlserver kaggle
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r ingestion/requirements.txt
+          pip install dbt-core dbt-sqlserver
 
-    - name: Download dataset from Kaggle
-      env:
-        KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
-        KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
-      run: |
-        mkdir -p ~/.kaggle
-        echo '{"username":"'$KAGGLE_USERNAME'","key":"'$KAGGLE_KEY'"}' > ~/.kaggle/kaggle.json
-        chmod 600 ~/.kaggle/kaggle.json
-        cd $GITHUB_WORKSPACE
-        mkdir -p data
-        kaggle datasets download -d darvinsures/pharma-batch-quality-and-process-data -p data --unzip
+      - name: Download dataset from Kaggle
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          mkdir -p ~/.kaggle
+          echo "{\"username\":\"$KAGGLE_USERNAME\",\"key\":\"$KAGGLE_KEY\"}" > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+          kaggle datasets download -d darvinsures/pharma-batch-quality-and-process-data -p data --unzip
 
-    - name: Load data to Azure SQL
-      env:
-        AZURE_SQL_SERVER: ${{ secrets.AZURE_SQL_SERVER }}
-        AZURE_SQL_DB: ${{ secrets.AZURE_SQL_DB }}
-        AZURE_SQL_USER: ${{ secrets.AZURE_SQL_USER }}
-        AZURE_SQL_PASSWORD: ${{ secrets.AZURE_SQL_PASSWORD }}
-      run: |
-        python ingestion/load_to_azure_sql.py
+      - name: Load data to Azure SQL raw schema
+        env:
+          AZURE_SQL_SERVER: ${{ secrets.AZURE_SQL_SERVER }}
+          AZURE_SQL_DB: ${{ secrets.AZURE_SQL_DB }}
+          AZURE_SQL_USER: ${{ secrets.AZURE_SQL_USER }}
+          AZURE_SQL_PASSWORD: ${{ secrets.AZURE_SQL_PASSWORD }}
+        run: python ingestion/load_to_azure_sql.py
 
-    - name: Run dbt
-      env:
-        AZURE_SQL_SERVER: ${{ secrets.AZURE_SQL_SERVER }}
-        AZURE_SQL_DB: ${{ secrets.AZURE_SQL_DB }}
-        AZURE_SQL_USER: ${{ secrets.AZURE_SQL_USER }}
-        AZURE_SQL_PASSWORD: ${{ secrets.AZURE_SQL_PASSWORD }}
-      run: |
-        cd pharma_analytics
-        dbt deps
-        dbt run
-        dbt test
+      - name: dbt deps
+        working-directory: pharma_analytics
+        run: dbt deps
 
-    - name: Notify on success
-      if: success()
-      run: echo "Pipeline completed successfully!"
+      - name: Transform — staging models
+        working-directory: pharma_analytics
+        env:
+          AZURE_SQL_SERVER: ${{ secrets.AZURE_SQL_SERVER }}
+          AZURE_SQL_DB: ${{ secrets.AZURE_SQL_DB }}
+          AZURE_SQL_USER: ${{ secrets.AZURE_SQL_USER }}
+          AZURE_SQL_PASSWORD: ${{ secrets.AZURE_SQL_PASSWORD }}
+        run: dbt run --select staging --profiles-dir .
 
-    - name: Notify on failure
-      if: failure()
-      run: echo "Pipeline failed! Check logs."
+      - name: Load into marts
+        working-directory: pharma_analytics
+        env:
+          AZURE_SQL_SERVER: ${{ secrets.AZURE_SQL_SERVER }}
+          AZURE_SQL_DB: ${{ secrets.AZURE_SQL_DB }}
+          AZURE_SQL_USER: ${{ secrets.AZURE_SQL_USER }}
+          AZURE_SQL_PASSWORD: ${{ secrets.AZURE_SQL_PASSWORD }}
+        run: dbt run --select marts --profiles-dir .
+
+      - name: Run dbt tests
+        working-directory: pharma_analytics
+        env:
+          AZURE_SQL_SERVER: ${{ secrets.AZURE_SQL_SERVER }}
+          AZURE_SQL_DB: ${{ secrets.AZURE_SQL_DB }}
+          AZURE_SQL_USER: ${{ secrets.AZURE_SQL_USER }}
+          AZURE_SQL_PASSWORD: ${{ secrets.AZURE_SQL_PASSWORD }}
+        run: dbt test --profiles-dir .
+
+      - name: Notify on success
+        if: success()
+        run: echo "Pipeline completed successfully!"
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "Pipeline failed! Check logs."

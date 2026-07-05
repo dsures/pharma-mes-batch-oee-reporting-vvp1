@@ -1,0 +1,40 @@
+version: 2
+
+models:
+  - name: fct_oee_by_batch
+    columns:
+      - name: batch_id
+        tests:
+          - unique
+          - not_null
+
+      - name: equipment_code
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_equipment')
+              field: equipment_code
+
+      - name: availability_pct
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+
+      - name: performance_pct
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+
+      - name: quality_pct
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+
+      - name: oee_pct
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1

@@ -1,0 +1,18 @@
+version: 2
+
+models:
+  - name: int_batch_production
+    columns:
+      - name: batch_id
+        tests:
+          - not_null
+
+      - name: equipment_code
+        tests:
+          - not_null
+
+      - name: batch_quality_pct
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
