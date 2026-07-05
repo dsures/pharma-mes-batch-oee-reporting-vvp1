@@ -2,11 +2,11 @@
 data/
 *.csv
 *.xlsx
+.txt
 
 # Environment
 .env
 .env.local
-.env.example
 
 # Python
 __pycache__/
