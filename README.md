@@ -46,7 +46,7 @@ Azure SQL — raw schema (JSON documents, zero transformation)
 Metabase Dashboards
    ├─ Equipment OEE & Availability
    └─ Downtime Impact on Quality
----
+```
 
 ## Key metrics — and their honest limitations
 
