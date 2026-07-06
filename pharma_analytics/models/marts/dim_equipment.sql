@@ -5,6 +5,7 @@
     )
 }}
 
+-- needed for equipment filter in the dashboard
 SELECT
     equipment_code,
     ROW_NUMBER() OVER (ORDER BY equipment_code) AS equipment_key,

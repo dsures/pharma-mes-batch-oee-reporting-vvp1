@@ -4,7 +4,7 @@
         schema='marts'
     )
 }}
-
+-- OEE calculation by batch, instead of shift, other constraints can be applied
 WITH batch_readings AS (
     SELECT
         s.equipment_code,
@@ -38,7 +38,9 @@ SELECT
     b.batch_end_date,
     a.total_readings,
     a.running_readings,
+    -- availability_pct = running_readings / total_readings
     CAST(a.running_readings AS FLOAT) / NULLIF(a.total_readings, 0) AS availability_pct,
+    -- machine performance -- not something i am familiar with
     CASE
         WHEN a.max_speed_observed > 0 THEN a.avg_speed / a.max_speed_observed
         ELSE NULL
@@ -46,11 +48,13 @@ SELECT
     b.batch_produced,
     b.batch_waste,
     b.batch_quality_pct AS quality_pct,
+    -- OEE = availability * performance * quality
     ISNULL(CAST(a.running_readings AS FLOAT) / NULLIF(a.total_readings, 0), 0)
         * ISNULL(CASE WHEN a.max_speed_observed > 0 THEN a.avg_speed / a.max_speed_observed ELSE NULL END, 0)
         * ISNULL(b.batch_quality_pct, 0) AS oee_pct,
     GETDATE() AS loaded_at
 FROM {{ ref('int_batch_production') }} b
+-- add batch info to the aggregated readings to calculate OEE
 INNER JOIN agg a
     ON b.equipment_code = a.equipment_code
    AND b.batch_id = a.batch_id

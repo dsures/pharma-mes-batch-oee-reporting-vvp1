@@ -4,7 +4,7 @@
         schema='marts'
     )
 }}
-
+-- breaking down each downtime event into a single row with start and end timestamps, duration, and number of readings
 WITH ordered AS (
     SELECT
         equipment_code,
@@ -47,6 +47,7 @@ downtime_islands AS (
         COUNT(*) AS reading_count,
         COUNT(DISTINCT batch_id) AS batches_affected
     FROM islands
+    -- this downtime classification can be changed
     WHERE equipment_state = 'idle_or_down'
     GROUP BY equipment_code, island_id
 )
@@ -56,9 +57,10 @@ SELECT
     equipment_code,
     downtime_start,
     downtime_end,
+    -- duration of downtime in minutes
     DATEDIFF(MINUTE, downtime_start, downtime_end) AS duration_minutes,
     reading_count,
     batches_affected,
     GETDATE() AS loaded_at
 FROM downtime_islands
-WHERE DATEDIFF(MINUTE, downtime_start, downtime_end) BETWEEN 10 AND 1440  -- 10 min to 24 hrs; anything longer is between-campaign idle, not a stoppage
+WHERE DATEDIFF(MINUTE, downtime_start, downtime_end) BETWEEN 10 AND 1440  -- 10 min to 24 hrs; anything longer is considered a baseline downtime event

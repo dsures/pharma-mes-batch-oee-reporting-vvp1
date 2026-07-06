@@ -5,6 +5,8 @@
     )
 }}
 
+-- summary table aggregaed by batch_id and equipment_code
+
 WITH per_batch AS (
     SELECT
         equipment_code,
@@ -30,6 +32,7 @@ SELECT
     batch_waste,
     CASE
         WHEN (batch_produced + batch_waste) > 0
+        -- batch quality percentage - simple percentage of good / (good + waste)
             THEN CAST(batch_produced AS FLOAT) / (batch_produced + batch_waste)
         ELSE NULL
     END AS batch_quality_pct
