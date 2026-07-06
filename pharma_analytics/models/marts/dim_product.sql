@@ -5,7 +5,7 @@
         unique_id='product_key'
     )
 }}
-
+-- useful if we would like to filter by product_code and strength in the future, not used in dashboard for now
 SELECT
     product_code,
     strength,

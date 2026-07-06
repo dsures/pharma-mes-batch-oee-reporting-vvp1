@@ -25,6 +25,7 @@ WITH parsed AS (
         j.ejection,
         j.source_file
     FROM {{ source('raw', 'process_timeseries') }} r
+    -- extract all the fields from the raw JSON data in one go
     CROSS APPLY OPENJSON(r.raw_data) WITH (
         raw_timestamp   NVARCHAR(50)   '$.timestamp',
         campaign        NVARCHAR(50)   '$.campaign',
@@ -49,7 +50,7 @@ WITH parsed AS (
 typed AS (
     SELECT
         *,
-        -- Two observed timestamp formats:
+        -- data quality issue with timestamp format, case statemement to handle different formats
         --   'YYYY-MM-DD HH:MM:SS'  e.g. 2018-11-22 23:07:27  (most files)
         --   'DDMMYYYY HH:MM'       e.g. 22112018 00:18        (file 15.csv)
         CASE

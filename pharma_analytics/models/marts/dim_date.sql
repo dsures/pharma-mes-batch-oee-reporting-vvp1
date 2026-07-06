@@ -5,6 +5,7 @@
     )
 }}
 
+-- supporting month level batch trends if needed, no needed since dashboard didnt need a monthly breakdown
 with month_mapping as (
     select 'jan' as month_abbr, 1 as month_num
     union all select 'feb', 2

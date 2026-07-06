@@ -5,6 +5,7 @@
     )
 }}
 
+-- parsing the raw JSON data
 WITH parsed AS (
     SELECT
         JSON_VALUE(raw_data, '$.batch')            AS batch,
@@ -33,13 +34,13 @@ SELECT
     TRY_CAST(size AS INT) AS batch_size,
     CAST(start AS NVARCHAR(50)) AS batch_start_month,
 
-    -- Material genealogy
+    -- Materials
     CAST(api_batch AS NVARCHAR(50)) AS api_batch_id,
     CAST(lactose_batch AS NVARCHAR(50)) AS lactose_batch_id,
     CAST(smcc_batch AS NVARCHAR(50)) AS smcc_batch_id,
     CAST(starch_batch AS NVARCHAR(50)) AS starch_batch_id,
 
-    -- Quality metrics (CQAs)
+    -- Quality metrics
     TRY_CAST(tbl_yield AS FLOAT) AS tablet_yield,
     TRY_CAST(batch_yield AS FLOAT) AS batch_yield,
     TRY_CAST(dissolution_av AS FLOAT) AS dissolution_average,
@@ -47,7 +48,7 @@ SELECT
     TRY_CAST(impurities_total AS FLOAT) AS total_impurities,
     TRY_CAST(resodual_solvent AS FLOAT) AS residual_solvent,
 
-    -- Derived: Pass/Fail flag (simplified - refine with real specs)
+    -- Pass/Fail flag to simulate real world
     CASE
         WHEN TRY_CAST(batch_yield AS FLOAT) >= 90
             AND TRY_CAST(impurities_total AS FLOAT) < 0.5
