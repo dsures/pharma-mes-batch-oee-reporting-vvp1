@@ -56,8 +56,6 @@ Metabase Dashboards
 
 **Downtime** is capped to 10 minutes–24 hours per event. Gaps longer than 24 hours are between-campaign idle time, not equipment failure, and are excluded. **There is no downtime-reason classification anywhere in the source data** — every process file was checked, none has a reason/category column. Dashboard 2's downtime breakdown is by equipment and duration, not by cause.
 
-```
-```
 
 ## Query tuning
 
@@ -67,7 +65,7 @@ Metabase Dashboards
 | Ad-hoc aggregation vs. pre-built mart | 1.714s | 1.03 | view vs table choice |
 
 
-```
+
 
 ## Prerequisites
 
@@ -144,12 +142,10 @@ Open `http://localhost:3000`, complete first-run setup, then add Azure SQL as a 
 ---
 
 ## Dashboards
-
-### Equipment OEE & Availability
 <img width="1260" height="766" alt="image" src="https://github.com/user-attachments/assets/41284614-9569-4938-87f8-0d63cbf75973" />
 
 
-### Downtime Impact on Quality
+
 <img width="1358" height="532" alt="image" src="https://github.com/user-attachments/assets/2eae153a-6aca-4612-a195-c2936ee15c69" />
 
 ---
@@ -160,6 +156,4 @@ Open `http://localhost:3000`, complete first-run setup, then add Azure SQL as a 
 - **Process/Process/*.csv** — 25 files, one per tablet press, continuous per-second/per-minute telemetry across many batches and campaigns.
 - **Source:** [Kaggle: darvinsures/pharma-batch-quality-and-process-data](https://www.kaggle.com/datasets/darvinsures/pharma-batch-quality-and-process-data), originally from the [figshare collection](https://figshare.com/collections/Big_data_collection_in_pharmaceutical_manufacturing/5645578) (DOI: 10.6084/m9.figshare.c.5645578), CC BY-SA 4.0.
 
-## License
 
-Code: MIT. Data: CC BY-SA 4.0 — attribution required, see above.
